@@ -4,64 +4,84 @@ import os
 import tempfile
 from gtts import gTTS
 
-st.set_page_config(page_title="Flashcard Deck Generator", layout="centered")
-st.title("🔊 TTS Flashcard Deck Generator")
-
+# === PAGE SETUP ===
+st.set_page_config(page_title="Anki Deck Generator", page_icon="🗣️")
 st.markdown("""
-Paste your vocab below, one pair per line:
-```
-french phrase,english translation
-```
-""")
+    <style>
+        .stApp {
+            max-width: 800px;
+            margin: auto;
+            padding: 2rem;
+        }
+        h1, h2 {
+            text-align: center;
+        }
+    </style>
+""", unsafe_allow_html=True)
 
-text_input = st.text_area("Vocab Pairs", height=250, placeholder="Bonjour,Hello\nMerci,Thank you")
-deck_name = st.text_input("Deck Name", "My TTS Deck")
-deck_id = 1234567890  # You can randomize or hash this later
+st.title("🗣️ French Audio Flashcard Generator")
+st.caption("Paste your vocab list and generate a downloadable Anki deck with native French audio.")
 
-if st.button("Generate Deck"):
-    if not text_input.strip():
-        st.warning("Please paste some vocab pairs.")
+# === INPUT SECTION ===
+st.header("📋 1. Enter Your Vocabulary")
+vocab_text = st.text_area("Each line should be: French word, English meaning", height=250)
+deck_name = st.text_input("📝 Name your deck (optional):", value="MyFrenchDeck")
+
+# === DECK GENERATION ===
+st.header("⚙️ 2. Generate Your Anki Deck")
+if st.button("🎧 Create Anki Deck"):
+    if not vocab_text.strip():
+        st.warning("Please paste some vocabulary.")
     else:
-        vocab = []
-        for line in text_input.strip().split('\n'):
-            if "," in line:
-                french, english = line.strip().split(",", 1)
-                vocab.append((french.strip(), english.strip()))
+        # Process vocab
+        vocab_lines = [line.strip() for line in vocab_text.strip().splitlines() if "," in line]
+        vocab = [tuple(map(str.strip, line.split(",", 1))) for line in vocab_lines]
 
+        # Set up temp dir for mp3s
+        temp_dir = tempfile.TemporaryDirectory()
+        media_files = []
+        notes = []
+
+        # Anki deck + model
+        deck_id = abs(hash(deck_name)) % (10 ** 10)
         model = genanki.Model(
             1607392319,
-            'Simple TTS Model',
-            fields=[
-                {"name": "English"},
-                {"name": "French"},
-                {"name": "Audio"}
-            ],
+            "French TTS Model",
+            fields=[{"name": "English"}, {"name": "French"}, {"name": "Audio"}],
             templates=[{
                 "name": "Card 1",
                 "qfmt": "{{English}}",
-                "afmt": "{{FrontSide}}<hr id='answer'>{{French}}{{Audio}}"
+                "afmt": "{{FrontSide}}<hr id='answer'>{{French}}<br>{{Audio}}"
             }]
         )
-
         deck = genanki.Deck(deck_id, deck_name)
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            media_files = []
-            for i, (french, english) in enumerate(vocab):
-                filename = f"tts_{i}.mp3"
-                filepath = os.path.join(tmpdir, filename)
-                tts = gTTS(french, lang='fr')
-                tts.save(filepath)
-                media_files.append(filepath)
-                note = genanki.Note(
-                    model=model,
-                    fields=[english, french, f"[sound:{filename}]"]
-                )
-                deck.add_note(note)
+        # Generate TTS & cards
+        for french, english in vocab:
+            filename = f"{french.replace(' ', '_')}.mp3"
+            path = os.path.join(temp_dir.name, filename)
+            tts = gTTS(text=french, lang='fr')
+            tts.save(path)
+            media_files.append(path)
+            note = genanki.Note(
+                model=model,
+                fields=[english, french, f"[sound:{filename}]"]
+            )
+            deck.add_note(note)
 
-            output_path = os.path.join(tmpdir, "output_deck.apkg")
-            genanki.Package(deck, media_files).write_to_file(output_path)
+        # Export deck
+        output_path = os.path.join(temp_dir.name, f"{deck_name}.apkg")
+        genanki.Package(deck, media_files).write_to_file(output_path)
 
-            with open(output_path, "rb") as f:
-                st.success("✅ Your deck is ready!")
-                st.download_button("📥 Download .apkg file", f, file_name="tts_deck.apkg")
+        st.success("✅ Done! Your deck is ready to download.")
+        with open(output_path, "rb") as f:
+            st.download_button(
+                label="📥 Download Anki Deck",
+                data=f,
+                file_name=f"{deck_name}.apkg",
+                mime="application/octet-stream"
+            )
+
+# === FOOTER ===
+st.markdown("---")
+st.markdown("Made with 💖 by Sebrina (https://github.com/sebrinaslate)")
